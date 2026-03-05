@@ -1,0 +1,35 @@
+name: Scan Commits
+on:
+  schedule:
+    - cron: '0 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install Ollama
+        run: curl -fsSL https://ollama.com/install.sh | sh
+      - name: Start Ollama and pull model
+        run: |
+          ollama serve &
+          sleep 3
+          ollama pull qwen2.5:3b
+      - run: pip install -r requirements.txt
+      - run: python -m commit_intel run --org Trailblaze-work
+        env:
+          GITHUB_TOKEN: ${{ secrets.ORG_TOKEN }}
+      - name: Commit changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/ docs/
+          git diff --staged --quiet || git commit -m "Update commit data and dashboard"
+          git push
