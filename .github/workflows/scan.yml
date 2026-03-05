@@ -12,20 +12,18 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-      - name: Install Ollama
-        run: curl -fsSL https://ollama.com/install.sh | sh
-      - name: Start Ollama and pull model
+
+      - name: Build image
+        run: docker build -t commit-intelligence .
+
+      - name: Run scan + analyze + dashboard
         run: |
-          ollama serve &
-          sleep 3
-          ollama pull qwen2.5:3b
-      - run: pip install -r requirements.txt
-      - run: python -m commit_intelligence run --org Trailblaze-work
-        env:
-          GITHUB_TOKEN: ${{ secrets.ORG_TOKEN }}
+          docker run \
+            -v ${{ github.workspace }}/data:/app/data \
+            -v ${{ github.workspace }}/docs:/app/docs \
+            -e GITHUB_TOKEN=${{ secrets.ORG_TOKEN }} \
+            commit-intelligence run --org Trailblaze-work
+
       - name: Commit changes
         run: |
           git config user.name "github-actions[bot]"

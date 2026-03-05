@@ -1,0 +1,519 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta http-equiv="Cache-Control" content="max-age=3000, must-revalidate">
+<meta http-equiv="Expires" content="%%EXPIRES%%">
+<title>Trailblaze Commit Intelligence</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=Outfit:wght@300;400;500&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+<style>
+  :root {
+    --bg: #08080a;
+    --surface: #111113;
+    --border: rgba(232, 154, 46, 0.12);
+    --border-glow: rgba(232, 154, 46, 0.25);
+    --text: #f0ebe3;
+    --text-muted: #9a9590;
+    --accent: #e89a2e;
+    --accent-orange: #e86a2e;
+    --accent-ember: #ff4d1a;
+    --green: #4ade80;
+    --red: #f87171;
+    --purple: #a78bfa;
+    --font-display: 'Syne', sans-serif;
+    --font-body: 'Outfit', sans-serif;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  ::-webkit-scrollbar { width: 6px; }
+  ::-webkit-scrollbar-track { background: var(--bg); }
+  ::-webkit-scrollbar-thumb { background: var(--accent); border-radius: 3px; }
+  body {
+    font-family: var(--font-body);
+    font-weight: 400;
+    color: var(--text);
+    background: var(--bg);
+    padding: 2rem;
+    max-width: 1200px;
+    margin: 0 auto;
+    -webkit-font-smoothing: antialiased;
+  }
+  h1 {
+    font-family: var(--font-display);
+    font-size: 1.5rem;
+    font-weight: 800;
+    letter-spacing: -0.02em;
+    background: linear-gradient(135deg, var(--accent), var(--accent-orange), var(--accent-ember));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  .header {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    margin-bottom: 1.5rem;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+  .header-meta { color: var(--text-muted); font-size: 0.85rem; font-weight: 300; }
+  .filter-bar {
+    margin-bottom: 1.5rem;
+    position: relative;
+    display: inline-block;
+  }
+  .filter-bar label {
+    color: var(--text-muted);
+    font-size: 0.85rem;
+    margin-right: 0.5rem;
+  }
+  .combo {
+    position: relative;
+    display: inline-block;
+  }
+  .combo-input {
+    background: var(--surface);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 0.5rem;
+    padding: 0.5rem 0.75rem;
+    font-size: 0.9rem;
+    width: 280px;
+    outline: none;
+  }
+  .combo-input:focus {
+    border-color: var(--border-glow);
+  }
+  .combo-list {
+    display: none;
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 0 0 0.5rem 0.5rem;
+    max-height: 240px;
+    overflow-y: auto;
+    z-index: 10;
+  }
+  .combo-list.open {
+    display: block;
+  }
+  .combo-item {
+    padding: 0.45rem 0.75rem;
+    cursor: pointer;
+    font-size: 0.9rem;
+  }
+  .combo-item:hover, .combo-item.active {
+    background: rgba(232, 154, 46, 0.12);
+  }
+  .combo-item .match {
+    color: var(--accent);
+    font-weight: 600;
+  }
+  .cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 1rem;
+    margin-bottom: 2rem;
+  }
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 0.75rem;
+    padding: 1.25rem;
+  }
+  .card-label { font-size: 0.7rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; min-height: 2.4em; }
+  .card-label .card-detail { display: block; font-size: 0.65rem; margin-top: 0.1rem; }
+  .card-value { font-size: 1.75rem; font-weight: 700; margin-top: 0.25rem; }
+  .card-value.accent { color: var(--accent); }
+  .card-value.green { color: var(--green); }
+  .card-value.purple { color: var(--accent-orange); }
+  .chart-container {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 0.75rem;
+    padding: 1.5rem;
+    margin-bottom: 2rem;
+  }
+  .chart-container h2 { font-family: var(--font-display); font-size: 1.05rem; margin-bottom: 1rem; font-weight: 700; letter-spacing: -0.01em; }
+  canvas { max-height: 350px; }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.9rem;
+  }
+  th, td { padding: 0.6rem 0.75rem; text-align: left; border-bottom: 1px solid var(--border); }
+  th { color: var(--text-muted); font-weight: 500; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em; }
+  tr:hover td { background: rgba(232, 154, 46, 0.06); }
+  .empty { text-align: center; color: var(--text-muted); padding: 3rem; }
+</style>
+</head>
+<body>
+<div class="header">
+  <h1>Trailblaze Commit Intelligence</h1>
+  <div class="header-meta">Last updated: %%LAST_UPDATED%%</div>
+</div>
+
+<div class="filter-bar">
+  <label>Repository:</label>
+  <div class="combo" id="repoCombo">
+    <input type="text" class="combo-input" id="repoInput" placeholder="All repositories" autocomplete="off">
+    <div class="combo-list" id="repoList"></div>
+  </div>
+</div>
+
+<div class="cards">
+  <div class="card">
+    <div class="card-label" id="cardTotalLabel">Total Commits</div>
+    <div class="card-value" id="cardTotal">0</div>
+  </div>
+  <div class="card">
+    <div class="card-label" id="cardAILabel">AI Adoption</div>
+    <div class="card-value accent" id="cardAI">0%</div>
+  </div>
+  <div class="card">
+    <div class="card-label" id="cardBFLabel">Bug / Feature Ratio</div>
+    <div class="card-value green" id="cardBF">0</div>
+  </div>
+  <div class="card">
+    <div class="card-label">Active Contributors</div>
+    <div class="card-value purple" id="cardContrib">0</div>
+  </div>
+</div>
+
+<div class="chart-container">
+  <h2>AI Tool Adoption (weekly % of human commits)</h2>
+  <canvas id="toolChart"></canvas>
+</div>
+
+<div class="chart-container">
+  <h2>Bug / Feature Ratio (weekly)</h2>
+  <canvas id="bfChart"></canvas>
+</div>
+
+<div class="chart-container">
+  <h2>Commit Size (weekly avg lines changed)</h2>
+  <canvas id="sizeChart"></canvas>
+</div>
+
+<div class="chart-container">
+  <h2>Commit Frequency (commits per author per week)</h2>
+  <canvas id="freqChart"></canvas>
+</div>
+
+<div class="chart-container">
+  <h2>Fix-after-commit Rate (% of commits followed by a fix to same files within 48h)</h2>
+  <canvas id="fixChart"></canvas>
+</div>
+
+
+<script>
+// --- Embedded data ---
+const DATA = %%ALL_DATA_JSON%%;
+const REPOS = %%REPOS_JSON%%;
+
+// --- Chart defaults ---
+Chart.defaults.color = '#9a9590';
+Chart.defaults.borderColor = 'rgba(232, 154, 46, 0.12)';
+
+const TOOL_COLORS = {
+  copilot: '#4ade80',
+  claude: '#a78bfa',
+  cursor: '#38bdf8',
+  codex: '#fb923c',
+  windsurf: '#f472b6',
+  other: '#9a9590',
+};
+
+let toolChart = new Chart(document.getElementById('toolChart'), {
+  type: 'line',
+  data: { labels: [], datasets: [] },
+  options: {
+    responsive: true,
+    plugins: { legend: { labels: { color: '#f0ebe3' } } },
+    scales: { y: { stacked: true, beginAtZero: true, max: 100, ticks: { callback: v => v + '%' } } },
+    interaction: { mode: 'index', intersect: false },
+  },
+});
+
+let bfChart = new Chart(document.getElementById('bfChart'), {
+  type: 'line',
+  data: { labels: [], datasets: [
+    { label: 'Bug/Feature Ratio', data: [], borderColor: '#e86a2e', backgroundColor: 'rgba(232, 106, 46, 0.10)', fill: true, tension: 0.3, pointRadius: 3 },
+  ] },
+  options: { responsive: true, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true } } },
+});
+
+let sizeChart = new Chart(document.getElementById('sizeChart'), {
+  type: 'line',
+  data: { labels: [], datasets: [
+    { label: 'Avg Lines Changed', data: [], borderColor: '#e89a2e', backgroundColor: 'rgba(232, 154, 46, 0.10)', fill: true, tension: 0.3, pointRadius: 3 },
+  ] },
+  options: { responsive: true, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true } } },
+});
+
+let freqChart = new Chart(document.getElementById('freqChart'), {
+  type: 'line',
+  data: { labels: [], datasets: [
+    { label: 'Avg Commits/Author/Week', data: [], borderColor: '#e86a2e', backgroundColor: 'rgba(232, 106, 46, 0.10)', fill: true, tension: 0.3, pointRadius: 3 },
+  ] },
+  options: { responsive: true, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true } } },
+});
+
+let fixChart = new Chart(document.getElementById('fixChart'), {
+  type: 'line',
+  data: { labels: [], datasets: [
+    { label: 'Fix-after-commit %', data: [], borderColor: '#ff4d1a', backgroundColor: 'rgba(255, 77, 26, 0.10)', fill: true, tension: 0.3, pointRadius: 3 },
+  ] },
+  options: { responsive: true, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, ticks: { callback: v => v + '%' } } } },
+});
+
+// --- Searchable repo picker ---
+let selectedRepo = '__all__';
+let activeIdx = -1;
+
+const comboInput = document.getElementById('repoInput');
+const comboList = document.getElementById('repoList');
+
+function highlightMatch(text, query) {
+  if (!query) return text;
+  const i = text.toLowerCase().indexOf(query.toLowerCase());
+  if (i === -1) return text;
+  return text.slice(0, i) + '<span class="match">' + text.slice(i, i + query.length) + '</span>' + text.slice(i + query.length);
+}
+
+function renderList(query) {
+  const q = (query || '').toLowerCase();
+  const items = [{ value: '__all__', label: 'All repositories' }]
+    .concat(REPOS.map(r => ({ value: r, label: r })))
+    .filter(it => !q || it.label.toLowerCase().includes(q));
+  activeIdx = -1;
+  comboList.innerHTML = items.map((it, i) =>
+    `<div class="combo-item" data-value="${it.value}" data-idx="${i}">${highlightMatch(it.label, query)}</div>`
+  ).join('');
+  comboList.classList.toggle('open', items.length > 0);
+}
+
+function selectRepo(value, label) {
+  selectedRepo = value;
+  comboInput.value = value === '__all__' ? '' : label || value;
+  comboInput.placeholder = value === '__all__' ? 'All repositories' : '';
+  comboList.classList.remove('open');
+  applyFilter();
+}
+
+comboInput.addEventListener('focus', () => renderList(comboInput.value));
+comboInput.addEventListener('input', () => renderList(comboInput.value));
+
+comboInput.addEventListener('keydown', (e) => {
+  const items = comboList.querySelectorAll('.combo-item');
+  if (e.key === 'ArrowDown') {
+    e.preventDefault();
+    activeIdx = Math.min(activeIdx + 1, items.length - 1);
+  } else if (e.key === 'ArrowUp') {
+    e.preventDefault();
+    activeIdx = Math.max(activeIdx - 1, 0);
+  } else if (e.key === 'Enter') {
+    e.preventDefault();
+    if (activeIdx >= 0 && items[activeIdx]) {
+      selectRepo(items[activeIdx].dataset.value, items[activeIdx].textContent);
+    } else if (comboInput.value === '') {
+      selectRepo('__all__', '');
+    }
+    comboInput.blur();
+    return;
+  } else if (e.key === 'Escape') {
+    comboList.classList.remove('open');
+    comboInput.blur();
+    return;
+  } else {
+    return;
+  }
+  items.forEach((el, i) => el.classList.toggle('active', i === activeIdx));
+  if (items[activeIdx]) items[activeIdx].scrollIntoView({ block: 'nearest' });
+});
+
+comboList.addEventListener('mousedown', (e) => {
+  const item = e.target.closest('.combo-item');
+  if (item) selectRepo(item.dataset.value, item.textContent);
+});
+
+document.addEventListener('click', (e) => {
+  if (!document.getElementById('repoCombo').contains(e.target)) {
+    comboList.classList.remove('open');
+  }
+});
+
+comboInput.addEventListener('blur', () => {
+  setTimeout(() => {
+    if (!comboInput.value && selectedRepo !== '__all__') {
+      selectRepo('__all__', '');
+    }
+  }, 200);
+});
+
+function applyFilter() {
+  const repo = selectedRepo;
+  const isAll = repo === '__all__';
+
+  // Weekly totals (needed for tool % calculation)
+  const aiRows = DATA.weeklyAI.filter(d => isAll || d.repo === repo);
+  const totalByWeek = {};
+  aiRows.forEach(d => {
+    totalByWeek[d.week] = (totalByWeek[d.week] || 0) + d.total;
+  });
+
+  // AI tool breakdown as % of total commits
+  const toolRows = DATA.aiTools.filter(d => isAll || d.repo === repo);
+  const toolByWeek = {};
+  const allTools = new Set();
+  toolRows.forEach(d => {
+    if (!toolByWeek[d.week]) toolByWeek[d.week] = {};
+    toolByWeek[d.week][d.tool] = (toolByWeek[d.week][d.tool] || 0) + d.count;
+    allTools.add(d.tool);
+  });
+  const toolWeeks = Object.keys(totalByWeek).sort();
+  const toolList = [...allTools].sort((a, b) => {
+    const sumA = toolRows.filter(d => d.tool === a).reduce((s, d) => s + d.count, 0);
+    const sumB = toolRows.filter(d => d.tool === b).reduce((s, d) => s + d.count, 0);
+    return sumB - sumA;
+  });
+  toolChart.data.labels = toolWeeks;
+  toolChart.data.datasets = toolList.map(tool => ({
+    label: tool,
+    data: toolWeeks.map(w => {
+      const total = totalByWeek[w] || 0;
+      const count = (toolByWeek[w] && toolByWeek[w][tool]) || 0;
+      return total > 0 ? Math.round(count / total * 1000) / 10 : 0;
+    }),
+    borderColor: TOOL_COLORS[tool] || '#9a9590',
+    backgroundColor: (TOOL_COLORS[tool] || '#9a9590') + '60',
+    fill: true,
+    stack: 'stack0',
+    tension: 0.3,
+    pointRadius: 3,
+  }));
+  toolChart.update();
+
+  // Bug/feature ratio
+  const bfRows = DATA.weeklyBF.filter(d => isAll || d.repo === repo);
+  const bfByWeek = {};
+  bfRows.forEach(d => {
+    if (!bfByWeek[d.week]) bfByWeek[d.week] = { bugs: 0, features: 0 };
+    bfByWeek[d.week].bugs += d.bugs;
+    bfByWeek[d.week].features += d.features;
+  });
+  const bfWeeks = Object.keys(bfByWeek).sort();
+  bfChart.data.labels = bfWeeks;
+  bfChart.data.datasets[0].data = bfWeeks.map(w => {
+    const f = bfByWeek[w].features;
+    return f > 0 ? Math.round(bfByWeek[w].bugs / f * 100) / 100 : 0;
+  });
+  bfChart.update();
+
+  // Author data
+  const authRows = DATA.authors.filter(d => isAll || d.repo === repo);
+  const authByName = {};
+  authRows.forEach(d => {
+    if (!authByName[d.author]) authByName[d.author] = { total: 0, ai: 0, bugs: 0, features: 0 };
+    authByName[d.author].total += d.total;
+    authByName[d.author].ai += d.ai_count;
+    authByName[d.author].bugs += d.bugs;
+    authByName[d.author].features += d.features;
+  });
+  const authSorted = Object.entries(authByName).sort((a, b) => b[1].total - a[1].total);
+
+  // Summary cards
+  const sumRows = DATA.repoSummary.filter(d => isAll || d.repo === repo);
+  let total = 0, aiCount = 0, bugs = 0, features = 0;
+  const contribs = new Set();
+  sumRows.forEach(d => {
+    total += d.total; aiCount += d.ai_count; bugs += d.bugs; features += d.features;
+  });
+  authSorted.forEach(([name]) => contribs.add(name));
+
+  document.getElementById('cardTotal').textContent = total;
+  document.getElementById('cardTotalLabel').innerHTML =
+    DATA.dateRange && DATA.dateRange.earliest
+      ? `Total Commits<span class="card-detail">since ${DATA.dateRange.earliest}</span>`
+      : 'Total Commits';
+
+  // AI adoption & B/F ratio: use most recent week
+  const aiWeeks = Object.keys(totalByWeek).sort();
+  const latestAIWeek = aiWeeks.length > 0 ? aiWeeks[aiWeeks.length - 1] : null;
+  if (latestAIWeek && totalByWeek[latestAIWeek] > 0) {
+    const weekAI = aiRows.filter(d => d.week === latestAIWeek);
+    const weekTotal = weekAI.reduce((s, d) => s + d.total, 0);
+    const weekAICount = weekAI.reduce((s, d) => s + d.ai_count, 0);
+    document.getElementById('cardAI').textContent = (weekTotal > 0 ? Math.round(weekAICount / weekTotal * 1000) / 10 : 0) + '%';
+    document.getElementById('cardAILabel').innerHTML = `AI Adoption<span class="card-detail">week of ${latestAIWeek}</span>`;
+  } else {
+    document.getElementById('cardAI').textContent = '0%';
+    document.getElementById('cardAILabel').textContent = 'AI Adoption';
+  }
+
+  const latestBFWeek = bfWeeks.length > 0 ? bfWeeks[bfWeeks.length - 1] : null;
+  if (latestBFWeek && bfByWeek[latestBFWeek]) {
+    const wb = bfByWeek[latestBFWeek];
+    document.getElementById('cardBF').textContent = wb.features > 0 ? (wb.bugs / wb.features).toFixed(2) : wb.bugs;
+    document.getElementById('cardBFLabel').innerHTML = `Bug / Feature Ratio<span class="card-detail">week of ${latestBFWeek}</span>`;
+  } else {
+    document.getElementById('cardBF').textContent = '0';
+    document.getElementById('cardBFLabel').textContent = 'Bug / Feature Ratio';
+  }
+
+  document.getElementById('cardContrib').textContent = contribs.size;
+
+  // Commit size chart
+  const sizeRows = DATA.commitSize.filter(d => isAll || d.repo === repo);
+  const sizeByWeek = {};
+  sizeRows.forEach(d => {
+    if (!sizeByWeek[d.week]) sizeByWeek[d.week] = { totalSize: 0, count: 0 };
+    sizeByWeek[d.week].totalSize += d.avg_size * d.commit_count;
+    sizeByWeek[d.week].count += d.commit_count;
+  });
+  const sizeWeeks = Object.keys(sizeByWeek).sort();
+  sizeChart.data.labels = sizeWeeks;
+  sizeChart.data.datasets[0].data = sizeWeeks.map(w => sizeByWeek[w].count > 0 ? Math.round(sizeByWeek[w].totalSize / sizeByWeek[w].count) : 0);
+  sizeChart.update();
+
+  // Commit frequency (avg commits per active author per week)
+  const freqRows = DATA.authorFreq.filter(d => isAll || d.repo === repo);
+  const freqByWeek = {};
+  freqRows.forEach(d => {
+    if (!freqByWeek[d.week]) freqByWeek[d.week] = { totalCommits: 0, authors: new Set() };
+    freqByWeek[d.week].totalCommits += d.commits;
+    freqByWeek[d.week].authors.add(d.author);
+  });
+  const freqWeeks = Object.keys(freqByWeek).sort();
+  freqChart.data.labels = freqWeeks;
+  freqChart.data.datasets[0].data = freqWeeks.map(w => {
+    const f = freqByWeek[w];
+    return f.authors.size > 0 ? Math.round(f.totalCommits / f.authors.size * 10) / 10 : 0;
+  });
+  freqChart.update();
+
+  // Fix-after-commit rate
+  const fixRows = DATA.fixRate.filter(d => isAll || d.repo === repo);
+  const fixByWeek = {};
+  fixRows.forEach(d => {
+    if (!fixByWeek[d.week]) fixByWeek[d.week] = { total: 0, fixed: 0 };
+    fixByWeek[d.week].total += d.total_commits;
+    fixByWeek[d.week].fixed += d.followed_by_fix;
+  });
+  const fixWeeks = Object.keys(fixByWeek).sort();
+  fixChart.data.labels = fixWeeks;
+  fixChart.data.datasets[0].data = fixWeeks.map(w => fixByWeek[w].total > 0 ? Math.round(fixByWeek[w].fixed / fixByWeek[w].total * 1000) / 10 : 0);
+  fixChart.update();
+}
+
+// Initial render
+applyFilter();
+</script>
+</body>
+</html>

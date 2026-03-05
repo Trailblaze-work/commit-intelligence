@@ -45,7 +45,10 @@ def init_db(conn: sqlite3.Connection) -> None:
             bug_count INTEGER,
             feature_count INTEGER,
             analysis_mode TEXT,
-            analyzed_at TEXT
+            analyzed_at TEXT,
+            lines_added INTEGER,
+            lines_removed INTEGER,
+            files_changed TEXT
         );
 
         CREATE INDEX IF NOT EXISTS idx_commits_date ON commits(committed_at);
@@ -97,9 +100,23 @@ def update_repo_analyzed(conn: sqlite3.Connection, repo_id: int,
     conn.commit()
 
 
+def _normalize_name(name: str) -> str:
+    """Normalize a name for fuzzy matching: lowercase, strip accents, remove separators."""
+    import unicodedata
+    # NFD decompose, strip combining marks (accents)
+    nfkd = unicodedata.normalize("NFKD", name.lower())
+    ascii_name = "".join(c for c in nfkd if not unicodedata.combining(c))
+    # Remove common separators
+    for ch in "-_. ":
+        ascii_name = ascii_name.replace(ch, "")
+    return ascii_name
+
+
 def ensure_alias(conn: sqlite3.Connection, email: str | None,
                   login: str | None, name: str | None) -> None:
-    """Register an author email if not already mapped. Uses login or name as default."""
+    """Register an author email if not already mapped.
+    Auto-merges with existing aliases when the email local part or author name
+    matches an existing canonical name (fuzzy)."""
     if not email:
         return
     existing = conn.execute(
@@ -107,7 +124,25 @@ def ensure_alias(conn: sqlite3.Connection, email: str | None,
     ).fetchone()
     if existing:
         return
+
     canonical = login or name or email
+
+    # Try to find an existing alias with a matching name
+    all_aliases = conn.execute(
+        "SELECT canonical_name FROM author_aliases"
+    ).fetchall()
+    norm_candidates = {_normalize_name(r["canonical_name"]): r["canonical_name"]
+                       for r in all_aliases}
+
+    # Check if any existing canonical name matches the new name, login, or email local part
+    email_local = email.split("@")[0].split("+")[-1]  # strip noreply prefix like 12345+user
+    for probe in [name, login, email_local]:
+        if probe:
+            norm = _normalize_name(probe)
+            if norm and norm in norm_candidates:
+                canonical = norm_candidates[norm]
+                break
+
     conn.execute(
         "INSERT OR IGNORE INTO author_aliases (email, canonical_name) VALUES (?, ?)",
         (email, canonical),
@@ -152,11 +187,12 @@ def update_commit_analysis(conn: sqlite3.Connection, commit_id: int,
 
 def weekly_ai_stats(conn: sqlite3.Connection) -> list[sqlite3.Row]:
     return conn.execute("""
-        SELECT strftime('%Y-W%W', committed_at) AS week,
+        SELECT date(committed_at, 'weekday 0', '-6 days') AS week,
                COUNT(*) AS total,
                SUM(CASE WHEN ai_assisted = 1 THEN 1 ELSE 0 END) AS ai_count
         FROM commits
         WHERE is_bot = 0 AND is_merge = 0 AND analyzed_at IS NOT NULL
+              AND committed_at >= '2026-01-01'
         GROUP BY week
         ORDER BY week
     """).fetchall()
@@ -164,11 +200,12 @@ def weekly_ai_stats(conn: sqlite3.Connection) -> list[sqlite3.Row]:
 
 def weekly_bugfix_feature_stats(conn: sqlite3.Connection) -> list[sqlite3.Row]:
     return conn.execute("""
-        SELECT strftime('%Y-W%W', committed_at) AS week,
+        SELECT date(committed_at, 'weekday 0', '-6 days') AS week,
                SUM(COALESCE(bug_count, 0)) AS bugs,
                SUM(COALESCE(feature_count, 0)) AS features
         FROM commits
         WHERE is_bot = 0 AND is_merge = 0 AND analyzed_at IS NOT NULL
+              AND committed_at >= '2026-01-01'
         GROUP BY week
         ORDER BY week
     """).fetchall()
@@ -176,7 +213,7 @@ def weekly_bugfix_feature_stats(conn: sqlite3.Connection) -> list[sqlite3.Row]:
 
 _AUTHOR_EXPR = "COALESCE(a.canonical_name, c.author_login, c.author_name)"
 _AUTHOR_JOIN = "LEFT JOIN author_aliases a ON c.author_email = a.email"
-_WHERE_HUMAN = "c.is_bot = 0 AND c.is_merge = 0 AND c.analyzed_at IS NOT NULL"
+_WHERE_HUMAN = "c.is_bot = 0 AND c.is_merge = 0 AND c.analyzed_at IS NOT NULL AND c.committed_at >= '2026-01-01'"
 
 
 def author_stats(conn: sqlite3.Connection) -> list[sqlite3.Row]:
@@ -208,6 +245,18 @@ def summary_stats(conn: sqlite3.Connection) -> dict:
     return dict(row)
 
 
+def date_range(conn: sqlite3.Connection) -> dict:
+    """Return the earliest and latest commit dates in the analyzed dataset."""
+    row = conn.execute(f"""
+        SELECT MIN(c.committed_at) AS earliest,
+               MAX(c.committed_at) AS latest
+        FROM commits c
+        {_AUTHOR_JOIN}
+        WHERE {_WHERE_HUMAN}
+    """).fetchone()
+    return {"earliest": row["earliest"], "latest": row["latest"]}
+
+
 def repo_list(conn: sqlite3.Connection) -> list[str]:
     rows = conn.execute(
         "SELECT name FROM repos ORDER BY name"
@@ -218,26 +267,42 @@ def repo_list(conn: sqlite3.Connection) -> list[str]:
 def per_repo_weekly_ai_stats(conn: sqlite3.Connection) -> list[sqlite3.Row]:
     return conn.execute("""
         SELECT r.name AS repo,
-               strftime('%Y-W%W', c.committed_at) AS week,
+               date(c.committed_at, 'weekday 0', '-6 days') AS week,
                COUNT(*) AS total,
                SUM(CASE WHEN c.ai_assisted = 1 THEN 1 ELSE 0 END) AS ai_count
         FROM commits c
         JOIN repos r ON c.repo_id = r.id
-        WHERE c.is_bot = 0 AND c.is_merge = 0 AND c.analyzed_at IS NOT NULL
+        WHERE c.is_bot = 0 AND c.is_merge = 0 AND c.analyzed_at IS NOT NULL AND c.committed_at >= '2026-01-01'
         GROUP BY repo, week
         ORDER BY repo, week
+    """).fetchall()
+
+
+def per_repo_weekly_ai_tool_stats(conn: sqlite3.Connection) -> list[sqlite3.Row]:
+    return conn.execute("""
+        SELECT r.name AS repo,
+               date(c.committed_at, 'weekday 0', '-6 days') AS week,
+               c.ai_tool AS tool,
+               COUNT(*) AS count
+        FROM commits c
+        JOIN repos r ON c.repo_id = r.id
+        WHERE c.is_bot = 0 AND c.is_merge = 0 AND c.analyzed_at IS NOT NULL
+              AND c.committed_at >= '2026-01-01' AND c.ai_assisted = 1
+              AND c.ai_tool IS NOT NULL AND c.ai_tool != 'none'
+        GROUP BY repo, week, tool
+        ORDER BY repo, week, tool
     """).fetchall()
 
 
 def per_repo_weekly_bf_stats(conn: sqlite3.Connection) -> list[sqlite3.Row]:
     return conn.execute("""
         SELECT r.name AS repo,
-               strftime('%Y-W%W', c.committed_at) AS week,
+               date(c.committed_at, 'weekday 0', '-6 days') AS week,
                SUM(COALESCE(c.bug_count, 0)) AS bugs,
                SUM(COALESCE(c.feature_count, 0)) AS features
         FROM commits c
         JOIN repos r ON c.repo_id = r.id
-        WHERE c.is_bot = 0 AND c.is_merge = 0 AND c.analyzed_at IS NOT NULL
+        WHERE c.is_bot = 0 AND c.is_merge = 0 AND c.analyzed_at IS NOT NULL AND c.committed_at >= '2026-01-01'
         GROUP BY repo, week
         ORDER BY repo, week
     """).fetchall()
@@ -275,3 +340,79 @@ def per_repo_summary(conn: sqlite3.Connection) -> list[sqlite3.Row]:
         GROUP BY repo
         ORDER BY total DESC
     """).fetchall()
+
+
+def per_repo_weekly_commit_size(conn: sqlite3.Connection) -> list[sqlite3.Row]:
+    return conn.execute("""
+        SELECT r.name AS repo,
+               date(c.committed_at, 'weekday 0', '-6 days') AS week,
+               AVG(COALESCE(c.lines_added, 0) + COALESCE(c.lines_removed, 0)) AS avg_size,
+               SUM(COALESCE(c.lines_added, 0)) AS total_added,
+               SUM(COALESCE(c.lines_removed, 0)) AS total_removed,
+               COUNT(*) AS commit_count
+        FROM commits c
+        JOIN repos r ON c.repo_id = r.id
+        WHERE c.is_bot = 0 AND c.is_merge = 0 AND c.analyzed_at IS NOT NULL AND c.committed_at >= '2026-01-01'
+              AND c.lines_added IS NOT NULL
+        GROUP BY repo, week
+        ORDER BY repo, week
+    """).fetchall()
+
+
+def per_repo_author_frequency(conn: sqlite3.Connection) -> list[sqlite3.Row]:
+    """Per author per week: commit count."""
+    return conn.execute(f"""
+        SELECT r.name AS repo,
+               {_AUTHOR_EXPR} AS author,
+               date(c.committed_at, 'weekday 0', '-6 days') AS week,
+               COUNT(*) AS commits
+        FROM commits c
+        JOIN repos r ON c.repo_id = r.id
+        {_AUTHOR_JOIN}
+        WHERE {_WHERE_HUMAN}
+        GROUP BY repo, author, week
+        ORDER BY repo, author, week
+    """).fetchall()
+
+
+FIX_AFTER_COMMIT_WINDOW_HOURS = 48
+
+def fix_after_commit_stats(conn: sqlite3.Connection) -> list[sqlite3.Row]:
+    """For each repo+week, count commits that were followed by a fix commit
+    (classified as bug_count > 0) touching the same files within 48 hours."""
+    return conn.execute(f"""
+        SELECT r.name AS repo,
+               date(c1.committed_at, 'weekday 0', '-6 days') AS week,
+               COUNT(DISTINCT c1.sha) AS total_commits,
+               COUNT(DISTINCT CASE
+                   WHEN c1.files_changed IS NOT NULL AND EXISTS (
+                       SELECT 1 FROM commits c2
+                       WHERE c2.repo_id = c1.repo_id
+                         AND c2.committed_at > c1.committed_at
+                         AND (julianday(c2.committed_at) - julianday(c1.committed_at)) * 24
+                             <= {FIX_AFTER_COMMIT_WINDOW_HOURS}
+                         AND c2.bug_count > 0
+                         AND c2.is_bot = 0 AND c2.is_merge = 0
+                         AND c2.files_changed IS NOT NULL
+                         AND EXISTS (
+                             SELECT value FROM json_each(c2.files_changed)
+                             WHERE value IN (SELECT value FROM json_each(c1.files_changed))
+                         )
+                   ) THEN c1.sha END
+               ) AS followed_by_fix
+        FROM commits c1
+        JOIN repos r ON c1.repo_id = r.id
+        WHERE c1.is_bot = 0 AND c1.is_merge = 0 AND c1.analyzed_at IS NOT NULL
+              AND c1.committed_at >= '2026-01-01'
+        GROUP BY repo, week
+        ORDER BY repo, week
+    """).fetchall()
+
+
+def update_commit_size(conn: sqlite3.Connection, sha: str,
+                       lines_added: int, lines_removed: int,
+                       files_changed: str | None) -> None:
+    conn.execute(
+        "UPDATE commits SET lines_added=?, lines_removed=?, files_changed=? WHERE sha=?",
+        (lines_added, lines_removed, files_changed, sha),
+    )

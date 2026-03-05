@@ -21,9 +21,21 @@ def main() -> None:
     p_scan.add_argument("--token", help="GitHub PAT (or set GITHUB_TOKEN env)")
     p_scan.add_argument("--months", type=int, default=6, help="Months of history (default: 6)")
 
+    # scan-local
+    p_local = sub.add_parser("scan-local", help="Scan local git repos on disk")
+    p_local.add_argument("--path", required=True, help="Directory containing git repos")
+    p_local.add_argument("--org", default="local", help="Org label for display (default: local)")
+    p_local.add_argument("--since", help="Only include commits after this date (YYYY-MM-DD)")
+
+    # backfill-sizes
+    p_sizes = sub.add_parser("backfill-sizes", help="Extract commit sizes from local repos")
+    p_sizes.add_argument("--path", required=True, help="Directory containing git repos")
+
+    # deduplicate-authors
+    sub.add_parser("deduplicate-authors", help="Heuristic author deduplication")
+
     # analyze
-    p_analyze = sub.add_parser("analyze", help="Classify commits with Ollama")
-    p_analyze.add_argument("--model", default="qwen2.5:3b", help="Ollama model (default: qwen2.5:3b)")
+    sub.add_parser("analyze", help="Classify commits with heuristics")
 
     # dashboard
     p_dash = sub.add_parser("dashboard", help="Generate HTML dashboard")
@@ -34,7 +46,6 @@ def main() -> None:
     p_run.add_argument("--org", required=True, help="GitHub org name")
     p_run.add_argument("--token", help="GitHub PAT (or set GITHUB_TOKEN env)")
     p_run.add_argument("--months", type=int, default=6, help="Months of history (default: 6)")
-    p_run.add_argument("--model", default="qwen2.5:3b", help="Ollama model (default: qwen2.5:3b)")
     p_run.add_argument("--output", default="docs/", help="Dashboard output directory")
 
     args = parser.parse_args()
@@ -43,9 +54,21 @@ def main() -> None:
         from .scanner import scan
         scan(args.org, token=args.token, months=args.months)
 
+    elif args.command == "scan-local":
+        from .scanner import scan_local
+        scan_local(args.path, org_name=args.org, since_date=args.since)
+
+    elif args.command == "deduplicate-authors":
+        from .analyzer import deduplicate_authors
+        deduplicate_authors()
+
+    elif args.command == "backfill-sizes":
+        from .scanner import backfill_sizes
+        backfill_sizes(args.path)
+
     elif args.command == "analyze":
         from .analyzer import analyze
-        analyze(model=args.model)
+        analyze()
 
     elif args.command == "dashboard":
         from .dashboard import generate
@@ -53,11 +76,12 @@ def main() -> None:
 
     elif args.command == "run":
         from .scanner import scan
-        from .analyzer import analyze
+        from .analyzer import analyze, deduplicate_authors
         from .dashboard import generate
 
         scan(args.org, token=args.token, months=args.months)
-        analyze(model=args.model)
+        analyze()
+        deduplicate_authors()
         generate(output_dir=args.output)
 
     else:
