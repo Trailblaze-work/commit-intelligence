@@ -70,16 +70,3 @@ The included workflow (`.github/workflows/scan.yml`) runs hourly:
 1. Create a GitHub PAT with `repo` + `read:org` scopes
 2. Add it as a repository secret named `ORG_TOKEN`
 3. Update the `--org` value in the workflow file
-
-## Architecture
-
-```
-commit_intelligence/
-  __main__.py        CLI entry point
-  scanner.py         GitHub API + local git scanning
-  analyzer.py        Heuristic classification + author deduplication
-  dashboard.py       SQLite -> static HTML (template in templates/)
-  db.py              Schema, queries, author aliases
-  templates/
-    dashboard.html   Dashboard HTML/CSS/JS template
-```
