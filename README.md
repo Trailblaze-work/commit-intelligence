@@ -12,42 +12,7 @@ Scan a GitHub org's repos, classify every commit with heuristics, and generate a
 - Generates a self-contained HTML dashboard with Chart.js charts and a searchable repo picker
 - Bot commits (dependabot, renovate, github-actions, etc.) and merge commits are excluded from all metrics
 
-## Quick start (Docker)
-
-```bash
-docker build -t commit-intelligence .
-
-# Scan local repos + analyze + generate dashboard
-docker run \
-  -v $(pwd)/data:/app/data \
-  -v $(pwd)/docs:/app/docs \
-  -v /path/to/repos:/repos:ro \
-  commit-intelligence scan-local --path /repos --org my-org --since 2026-01-01
-
-docker run \
-  -v $(pwd)/data:/app/data \
-  commit-intelligence analyze
-
-docker run \
-  -v $(pwd)/data:/app/data \
-  commit-intelligence deduplicate-authors
-
-docker run \
-  -v $(pwd)/data:/app/data \
-  -v $(pwd)/docs:/app/docs \
-  commit-intelligence dashboard
-
-# Or scan from GitHub API (all-in-one)
-docker run \
-  -v $(pwd)/data:/app/data \
-  -v $(pwd)/docs:/app/docs \
-  -e GITHUB_TOKEN=ghp_... \
-  commit-intelligence run --org YOUR-ORG
-```
-
-## Local setup (without Docker)
-
-### Prerequisites
+## Setup
 
 - Python 3.12+
 - For GitHub API scanning: a PAT with `repo` + `read:org` scopes
@@ -57,34 +22,20 @@ pip install -r requirements.txt
 echo "GITHUB_TOKEN=ghp_your_token_here" > .env
 ```
 
-### Usage
+## Usage
 
 ```bash
-# Scan from local git repos (no token needed)
-python -m commit_intelligence scan-local --path /path/to/repos --org my-org --since 2026-01-01
-
-# Scan from GitHub API
-python -m commit_intelligence scan --org YOUR-ORG
-
-# Classify commits
-python -m commit_intelligence analyze
-
-# Deduplicate authors
-python -m commit_intelligence deduplicate-authors
-
-# Backfill commit sizes (lines added/removed) from local repos
-python -m commit_intelligence backfill-sizes --path /path/to/repos
-
-# Generate dashboard
-python -m commit_intelligence dashboard
-
-# All-in-one (GitHub API: scan + analyze + deduplicate + dashboard)
+# All-in-one from GitHub API
 python -m commit_intelligence run --org YOUR-ORG
+
+# All-in-one from local git repos
+python -m commit_intelligence run-local --path /path/to/repos --org my-org --since 2026-01-01
 ```
 
-### First run
+Individual steps are also available if needed:
 
 ```bash
+python -m commit_intelligence scan --org YOUR-ORG
 python -m commit_intelligence scan-local --path /path/to/repos --org my-org --since 2026-01-01
 python -m commit_intelligence analyze
 python -m commit_intelligence deduplicate-authors

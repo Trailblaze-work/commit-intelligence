@@ -13,16 +13,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Build image
-        run: docker build -t commit-intelligence .
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
 
       - name: Run scan + analyze + dashboard
-        run: |
-          docker run \
-            -v ${{ github.workspace }}/data:/app/data \
-            -v ${{ github.workspace }}/docs:/app/docs \
-            -e GITHUB_TOKEN=${{ secrets.ORG_TOKEN }} \
-            commit-intelligence run --org Trailblaze-work
+        env:
+          GITHUB_TOKEN: ${{ secrets.ORG_TOKEN }}
+        run: python -m commit_intelligence run --org Trailblaze-work
 
       - name: Commit changes
         run: |
