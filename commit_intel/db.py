@@ -206,3 +206,72 @@ def summary_stats(conn: sqlite3.Connection) -> dict:
         WHERE {_WHERE_HUMAN}
     """).fetchone()
     return dict(row)
+
+
+def repo_list(conn: sqlite3.Connection) -> list[str]:
+    rows = conn.execute(
+        "SELECT name FROM repos ORDER BY name"
+    ).fetchall()
+    return [r["name"] for r in rows]
+
+
+def per_repo_weekly_ai_stats(conn: sqlite3.Connection) -> list[sqlite3.Row]:
+    return conn.execute("""
+        SELECT r.name AS repo,
+               strftime('%Y-W%W', c.committed_at) AS week,
+               COUNT(*) AS total,
+               SUM(CASE WHEN c.ai_assisted = 1 THEN 1 ELSE 0 END) AS ai_count
+        FROM commits c
+        JOIN repos r ON c.repo_id = r.id
+        WHERE c.is_bot = 0 AND c.is_merge = 0 AND c.analyzed_at IS NOT NULL
+        GROUP BY repo, week
+        ORDER BY repo, week
+    """).fetchall()
+
+
+def per_repo_weekly_bf_stats(conn: sqlite3.Connection) -> list[sqlite3.Row]:
+    return conn.execute("""
+        SELECT r.name AS repo,
+               strftime('%Y-W%W', c.committed_at) AS week,
+               SUM(COALESCE(c.bug_count, 0)) AS bugs,
+               SUM(COALESCE(c.feature_count, 0)) AS features
+        FROM commits c
+        JOIN repos r ON c.repo_id = r.id
+        WHERE c.is_bot = 0 AND c.is_merge = 0 AND c.analyzed_at IS NOT NULL
+        GROUP BY repo, week
+        ORDER BY repo, week
+    """).fetchall()
+
+
+def per_repo_author_stats(conn: sqlite3.Connection) -> list[sqlite3.Row]:
+    return conn.execute(f"""
+        SELECT r.name AS repo,
+               {_AUTHOR_EXPR} AS author,
+               COUNT(*) AS total,
+               SUM(CASE WHEN c.ai_assisted = 1 THEN 1 ELSE 0 END) AS ai_count,
+               SUM(COALESCE(c.bug_count, 0)) AS bugs,
+               SUM(COALESCE(c.feature_count, 0)) AS features
+        FROM commits c
+        JOIN repos r ON c.repo_id = r.id
+        {_AUTHOR_JOIN}
+        WHERE {_WHERE_HUMAN}
+        GROUP BY repo, author
+        ORDER BY repo, total DESC
+    """).fetchall()
+
+
+def per_repo_summary(conn: sqlite3.Connection) -> list[sqlite3.Row]:
+    return conn.execute(f"""
+        SELECT r.name AS repo,
+               COUNT(*) AS total,
+               SUM(CASE WHEN c.ai_assisted = 1 THEN 1 ELSE 0 END) AS ai_count,
+               SUM(COALESCE(c.bug_count, 0)) AS bugs,
+               SUM(COALESCE(c.feature_count, 0)) AS features,
+               COUNT(DISTINCT {_AUTHOR_EXPR}) AS contributors
+        FROM commits c
+        JOIN repos r ON c.repo_id = r.id
+        {_AUTHOR_JOIN}
+        WHERE {_WHERE_HUMAN}
+        GROUP BY repo
+        ORDER BY total DESC
+    """).fetchall()

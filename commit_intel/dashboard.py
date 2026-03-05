@@ -40,11 +40,28 @@ TEMPLATE = """\
     display: flex;
     justify-content: space-between;
     align-items: baseline;
-    margin-bottom: 2rem;
+    margin-bottom: 1.5rem;
     flex-wrap: wrap;
     gap: 0.5rem;
   }}
   .header-meta {{ color: var(--text-muted); font-size: 0.85rem; }}
+  .filter-bar {{
+    margin-bottom: 1.5rem;
+  }}
+  .filter-bar select {{
+    background: var(--surface);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 0.5rem;
+    padding: 0.5rem 0.75rem;
+    font-size: 0.9rem;
+    cursor: pointer;
+  }}
+  .filter-bar label {{
+    color: var(--text-muted);
+    font-size: 0.85rem;
+    margin-right: 0.5rem;
+  }}
   .cards {{
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
@@ -88,22 +105,30 @@ TEMPLATE = """\
   <div class="header-meta">Last updated: {last_updated}</div>
 </div>
 
+<div class="filter-bar">
+  <label for="repoFilter">Repository:</label>
+  <select id="repoFilter" onchange="applyFilter()">
+    <option value="__all__">All repositories</option>
+    {repo_options}
+  </select>
+</div>
+
 <div class="cards">
   <div class="card">
     <div class="card-label">Total Commits</div>
-    <div class="card-value">{total_commits}</div>
+    <div class="card-value" id="cardTotal">0</div>
   </div>
   <div class="card">
     <div class="card-label">AI Adoption</div>
-    <div class="card-value accent">{ai_pct}%</div>
+    <div class="card-value accent" id="cardAI">0%</div>
   </div>
   <div class="card">
     <div class="card-label">Bug / Feature Ratio</div>
-    <div class="card-value green">{bug_feature_ratio}</div>
+    <div class="card-value green" id="cardBF">0</div>
   </div>
   <div class="card">
     <div class="card-label">Active Contributors</div>
-    <div class="card-value purple">{contributors}</div>
+    <div class="card-value purple" id="cardContrib">0</div>
   </div>
 </div>
 
@@ -119,79 +144,100 @@ TEMPLATE = """\
 
 <div class="chart-container">
   <h2>Author Breakdown</h2>
-  {author_table}
+  <table>
+    <thead><tr><th>Author</th><th>Commits</th><th>AI %</th><th>Bugs Fixed</th><th>Features</th></tr></thead>
+    <tbody id="authorBody"></tbody>
+  </table>
 </div>
 
 <script>
-const aiData = {ai_data_json};
-const bfData = {bf_data_json};
+// --- Embedded data ---
+const DATA = {all_data_json};
 
-const chartDefaults = {{
-  color: '#94a3b8',
-  borderColor: '#334155',
-}};
-Chart.defaults.color = chartDefaults.color;
-Chart.defaults.borderColor = chartDefaults.borderColor;
+// --- Chart instances ---
+Chart.defaults.color = '#94a3b8';
+Chart.defaults.borderColor = '#334155';
 
-// AI Adoption line chart
-new Chart(document.getElementById('aiChart'), {{
+let aiChart = new Chart(document.getElementById('aiChart'), {{
   type: 'line',
-  data: {{
-    labels: aiData.map(d => d.week),
-    datasets: [{{
-      label: 'AI-Assisted %',
-      data: aiData.map(d => d.total > 0 ? Math.round(d.ai_count / d.total * 100 * 10) / 10 : 0),
-      borderColor: '#38bdf8',
-      backgroundColor: 'rgba(56, 189, 248, 0.15)',
-      fill: true,
-      tension: 0.3,
-      pointRadius: 3,
-    }}]
-  }},
-  options: {{
-    responsive: true,
-    plugins: {{
-      legend: {{ display: false }},
-    }},
-    scales: {{
-      y: {{
-        beginAtZero: true,
-        max: 100,
-        ticks: {{ callback: v => v + '%' }},
-      }},
-    }},
-  }},
+  data: {{ labels: [], datasets: [{{ label: 'AI-Assisted %', data: [], borderColor: '#38bdf8', backgroundColor: 'rgba(56, 189, 248, 0.15)', fill: true, tension: 0.3, pointRadius: 3 }}] }},
+  options: {{ responsive: true, plugins: {{ legend: {{ display: false }} }}, scales: {{ y: {{ beginAtZero: true, max: 100, ticks: {{ callback: v => v + '%' }} }} }} }},
 }});
 
-// Bug vs Feature stacked bar chart
-new Chart(document.getElementById('bfChart'), {{
+let bfChart = new Chart(document.getElementById('bfChart'), {{
   type: 'bar',
-  data: {{
-    labels: bfData.map(d => d.week),
-    datasets: [
-      {{
-        label: 'Bugs Fixed',
-        data: bfData.map(d => d.bugs),
-        backgroundColor: '#f87171',
-      }},
-      {{
-        label: 'Features Added',
-        data: bfData.map(d => d.features),
-        backgroundColor: '#4ade80',
-      }},
-    ]
-  }},
-  options: {{
-    responsive: true,
-    plugins: {{
-      legend: {{ position: 'top' }},
-    }},
-    scales: {{
-      x: {{ stacked: true }},
-      y: {{ stacked: true, beginAtZero: true }},
-    }},
-  }},
+  data: {{ labels: [], datasets: [
+    {{ label: 'Bugs Fixed', data: [], backgroundColor: '#f87171' }},
+    {{ label: 'Features Added', data: [], backgroundColor: '#4ade80' }},
+  ] }},
+  options: {{ responsive: true, plugins: {{ legend: {{ position: 'top' }} }}, scales: {{ x: {{ stacked: true }}, y: {{ stacked: true, beginAtZero: true }} }} }},
 }});
+
+function applyFilter() {{
+  const repo = document.getElementById('repoFilter').value;
+  const isAll = repo === '__all__';
+
+  // Filter weekly AI data
+  const aiRows = DATA.weeklyAI.filter(d => isAll || d.repo === repo);
+  const aiByWeek = {{}};
+  aiRows.forEach(d => {{
+    if (!aiByWeek[d.week]) aiByWeek[d.week] = {{ total: 0, ai_count: 0 }};
+    aiByWeek[d.week].total += d.total;
+    aiByWeek[d.week].ai_count += d.ai_count;
+  }});
+  const aiWeeks = Object.keys(aiByWeek).sort();
+  aiChart.data.labels = aiWeeks;
+  aiChart.data.datasets[0].data = aiWeeks.map(w => aiByWeek[w].total > 0 ? Math.round(aiByWeek[w].ai_count / aiByWeek[w].total * 1000) / 10 : 0);
+  aiChart.update();
+
+  // Filter weekly bug/feature data
+  const bfRows = DATA.weeklyBF.filter(d => isAll || d.repo === repo);
+  const bfByWeek = {{}};
+  bfRows.forEach(d => {{
+    if (!bfByWeek[d.week]) bfByWeek[d.week] = {{ bugs: 0, features: 0 }};
+    bfByWeek[d.week].bugs += d.bugs;
+    bfByWeek[d.week].features += d.features;
+  }});
+  const bfWeeks = Object.keys(bfByWeek).sort();
+  bfChart.data.labels = bfWeeks;
+  bfChart.data.datasets[0].data = bfWeeks.map(w => bfByWeek[w].bugs);
+  bfChart.data.datasets[1].data = bfWeeks.map(w => bfByWeek[w].features);
+  bfChart.update();
+
+  // Filter author data
+  const authRows = DATA.authors.filter(d => isAll || d.repo === repo);
+  const authByName = {{}};
+  authRows.forEach(d => {{
+    if (!authByName[d.author]) authByName[d.author] = {{ total: 0, ai: 0, bugs: 0, features: 0 }};
+    authByName[d.author].total += d.total;
+    authByName[d.author].ai += d.ai_count;
+    authByName[d.author].bugs += d.bugs;
+    authByName[d.author].features += d.features;
+  }});
+  const authSorted = Object.entries(authByName).sort((a, b) => b[1].total - a[1].total);
+  const tbody = document.getElementById('authorBody');
+  tbody.innerHTML = authSorted.map(([name, s]) => {{
+    const pct = s.total > 0 ? Math.round(s.ai / s.total * 1000) / 10 : 0;
+    return `<tr><td>${{name}}</td><td>${{s.total}}</td><td>${{pct}}%</td><td>${{s.bugs}}</td><td>${{s.features}}</td></tr>`;
+  }}).join('');
+
+  // Summary cards
+  const sumRows = DATA.repoSummary.filter(d => isAll || d.repo === repo);
+  let total = 0, aiCount = 0, bugs = 0, features = 0;
+  const contribs = new Set();
+  sumRows.forEach(d => {{
+    total += d.total; aiCount += d.ai_count; bugs += d.bugs; features += d.features;
+  }});
+  authSorted.forEach(([name]) => contribs.add(name));
+
+  document.getElementById('cardTotal').textContent = total;
+  document.getElementById('cardAI').textContent = (total > 0 ? Math.round(aiCount / total * 1000) / 10 : 0) + '%';
+  document.getElementById('cardBF').textContent = features > 0 ? (bugs / features).toFixed(2) : bugs;
+  document.getElementById('cardContrib').textContent = contribs.size;
+}}
+
+// Initial render
+applyFilter();
 </script>
 </body>
 </html>
@@ -202,57 +248,30 @@ def generate(output_dir: str = "docs/") -> None:
     conn = db.get_connection()
     db.init_db(conn)
 
-    summary = db.summary_stats(conn)
-    weekly_ai = db.weekly_ai_stats(conn)
-    weekly_bf = db.weekly_bugfix_feature_stats(conn)
-    authors = db.author_stats(conn)
+    repos = db.repo_list(conn)
+    weekly_ai = db.per_repo_weekly_ai_stats(conn)
+    weekly_bf = db.per_repo_weekly_bf_stats(conn)
+    authors = db.per_repo_author_stats(conn)
+    repo_summary = db.per_repo_summary(conn)
     conn.close()
 
-    total = summary["total"] or 0
-    ai_count = summary["ai_count"] or 0
-    bugs = summary["bugs"] or 0
-    features = summary["features"] or 0
-    contributors = summary["contributors"] or 0
+    all_data = {
+        "weeklyAI": [{"repo": r["repo"], "week": r["week"], "total": r["total"], "ai_count": r["ai_count"]} for r in weekly_ai],
+        "weeklyBF": [{"repo": r["repo"], "week": r["week"], "bugs": r["bugs"], "features": r["features"]} for r in weekly_bf],
+        "authors": [{"repo": r["repo"], "author": r["author"], "total": r["total"], "ai_count": r["ai_count"], "bugs": r["bugs"], "features": r["features"]} for r in authors],
+        "repoSummary": [{"repo": r["repo"], "total": r["total"], "ai_count": r["ai_count"], "bugs": r["bugs"], "features": r["features"], "contributors": r["contributors"]} for r in repo_summary],
+    }
 
-    ai_pct = round(ai_count / total * 100, 1) if total > 0 else 0
-    bug_feature_ratio = round(bugs / features, 2) if features > 0 else bugs
-
-    ai_data = [{"week": r["week"], "total": r["total"], "ai_count": r["ai_count"]}
-               for r in weekly_ai]
-    bf_data = [{"week": r["week"], "bugs": r["bugs"], "features": r["features"]}
-               for r in weekly_bf]
-
-    # Author table
-    if authors:
-        rows = []
-        for a in authors:
-            a_total = a["total"]
-            a_ai = a["ai_count"] or 0
-            a_pct = round(a_ai / a_total * 100, 1) if a_total > 0 else 0
-            rows.append(
-                f"<tr><td>{_esc(a['author'])}</td><td>{a_total}</td>"
-                f"<td>{a_pct}%</td><td>{a['bugs']}</td><td>{a['features']}</td></tr>"
-            )
-        author_table = (
-            "<table><thead><tr><th>Author</th><th>Commits</th><th>AI %</th>"
-            "<th>Bugs Fixed</th><th>Features</th></tr></thead><tbody>"
-            + "\n".join(rows)
-            + "</tbody></table>"
-        )
-    else:
-        author_table = '<div class="empty">No data yet. Run scan and analyze first.</div>'
+    repo_options = "\n    ".join(
+        f'<option value="{_esc(r)}">{_esc(r)}</option>' for r in repos
+    )
 
     last_updated = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
 
     html = TEMPLATE.format(
         last_updated=last_updated,
-        total_commits=total,
-        ai_pct=ai_pct,
-        bug_feature_ratio=bug_feature_ratio,
-        contributors=contributors,
-        ai_data_json=json.dumps(ai_data),
-        bf_data_json=json.dumps(bf_data),
-        author_table=author_table,
+        repo_options=repo_options,
+        all_data_json=json.dumps(all_data),
     )
 
     out_path = Path(output_dir)
