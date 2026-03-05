@@ -51,7 +51,7 @@ GENERIC_AI_PATTERNS = [
 _CC_PREFIX = re.compile(
     r"^(?P<type>[a-z]+)"        # type: fix, feat, chore, etc.
     r"\s*"                      # optional space before scope
-    r"(?:\([^)]*\))?"           # optional scope: (BUP-1234)
+    r"(?:\([^)]*\))?"           # optional scope: (JIRA-1234)
     r"(?:!)?"                   # optional breaking change marker
     r"\s*:\s*",                 # colon with optional surrounding whitespace
     re.IGNORECASE,
