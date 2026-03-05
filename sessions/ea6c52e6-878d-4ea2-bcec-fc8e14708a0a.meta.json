@@ -1,0 +1,22 @@
+{
+  "session_id": "ea6c52e6-878d-4ea2-bcec-fc8e14708a0a",
+  "slug": "polymorphic-brewing-kettle",
+  "started": "2026-03-05T11:31:58.802Z",
+  "last_updated": "2026-03-05T11:49:31.639Z",
+  "models": [
+    "claude-opus-4-6"
+  ],
+  "client_version": "2.1.69",
+  "git_branch": "HEAD",
+  "user_turns": 91,
+  "assistant_turns": 141,
+  "commits": [],
+  "tools_used": {
+    "ToolSearch": 3,
+    "Bash": 41,
+    "Write": 14,
+    "Read": 13,
+    "Edit": 15
+  },
+  "compressed_size": 99798
+}
