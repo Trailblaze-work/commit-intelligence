@@ -1,4 +1,4 @@
-"""CLI entry point for commit-intel."""
+"""CLI entry point for commit-intelligence."""
 
 import argparse
 import sys
@@ -10,7 +10,7 @@ from dotenv import load_dotenv
 def main() -> None:
     load_dotenv(Path(__file__).resolve().parent.parent / ".env")
     parser = argparse.ArgumentParser(
-        prog="commit_intel",
+        prog="commit_intelligence",
         description="Commit Intelligence for GitHub orgs",
     )
     sub = parser.add_subparsers(dest="command")

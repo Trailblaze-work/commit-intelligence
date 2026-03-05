@@ -1,4 +1,4 @@
-# commit-intel
+# commit-intelligence
 
 Scan a GitHub org's repos, classify every commit with a local LLM, and generate a static dashboard tracking AI adoption and bug/feature ratios over time.
 
@@ -21,7 +21,7 @@ Scan a GitHub org's repos, classify every commit with a local LLM, and generate 
 ```bash
 # Clone and install
 git clone <this-repo>
-cd commit-intel
+cd commit-intelligence
 pip install -r requirements.txt
 
 # Pull the LLM model
@@ -41,19 +41,19 @@ Replace `Trailblaze-work` with your org name in all commands below and in `.gith
 
 ```bash
 # 1. Scan commits (last 6 months by default)
-python -m commit_intel scan --org YOUR-ORG
+python -m commit_intelligence scan --org YOUR-ORG
 
 # 2. Classify with Ollama
-python -m commit_intel analyze
+python -m commit_intelligence analyze
 
 # 3. Generate dashboard
-python -m commit_intel dashboard
+python -m commit_intelligence dashboard
 ```
 
 ### All-in-one
 
 ```bash
-python -m commit_intel run --org YOUR-ORG
+python -m commit_intelligence run --org YOUR-ORG
 ```
 
 ### Options
@@ -113,7 +113,7 @@ New emails are auto-registered during scanning with the GitHub login as the defa
 ## Architecture
 
 ```
-commit_intel/
+commit_intelligence/
   __main__.py    CLI entry point (argparse + dotenv)
   scanner.py     GitHub API -> SQLite (incremental via last_scanned_at)
   analyzer.py    Ollama LLM classification (heuristic fallback on errors)
