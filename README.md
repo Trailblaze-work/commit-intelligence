@@ -8,7 +8,7 @@ Scan a GitHub org's repos, classify every commit with heuristics, and generate a
 - Incrementally fetches only new commits since last run
 - Classifies each commit using pattern matching: AI-assisted? which tool? bug fix or feature?
 - Deduplicates authors via heuristics (merges multiple emails/names per person)
-- Stores everything in a SQLite database (committed to repo for portability)
+- Stores everything in a SQLite database
 - Generates a self-contained HTML dashboard with Chart.js charts and a searchable repo picker
 - Bot commits (dependabot, renovate, github-actions, etc.) and merge commits are excluded from all metrics
 
@@ -30,10 +30,14 @@ docker run \
 
 docker run \
   -v $(pwd)/data:/app/data \
+  commit-intelligence deduplicate-authors
+
+docker run \
+  -v $(pwd)/data:/app/data \
   -v $(pwd)/docs:/app/docs \
   commit-intelligence dashboard
 
-# Or scan from GitHub API
+# Or scan from GitHub API (all-in-one)
 docker run \
   -v $(pwd)/data:/app/data \
   -v $(pwd)/docs:/app/docs \
@@ -68,10 +72,13 @@ python -m commit_intelligence analyze
 # Deduplicate authors
 python -m commit_intelligence deduplicate-authors
 
+# Backfill commit sizes (lines added/removed) from local repos
+python -m commit_intelligence backfill-sizes --path /path/to/repos
+
 # Generate dashboard
 python -m commit_intelligence dashboard
 
-# All-in-one (GitHub API: scan + analyze + dashboard)
+# All-in-one (GitHub API: scan + analyze + deduplicate + dashboard)
 python -m commit_intelligence run --org YOUR-ORG
 ```
 
@@ -85,8 +92,6 @@ python -m commit_intelligence backfill-sizes --path /path/to/repos
 python -m commit_intelligence dashboard
 ```
 
-After the initial backlog, commit `data/commits.db` to the repo. The CI job will then only process new commits.
-
 ## Dashboard
 
 Open `docs/index.html` in a browser. The dashboard shows:
@@ -95,7 +100,7 @@ Open `docs/index.html` in a browser. The dashboard shows:
 - Bug / feature ratio trend
 - Commit size (avg lines changed per week)
 - Commit frequency (commits per author per week)
-- Fix-after-commit rate
+- Fix-after-commit rate (% of commits followed by a fix to same files within 48h)
 - Per-author breakdown table
 - Repo filter with search/autocomplete
 
@@ -105,8 +110,9 @@ The included workflow (`.github/workflows/scan.yml`) runs hourly:
 
 1. Scans for new commits since last run
 2. Classifies them with heuristics
-3. Regenerates the dashboard
-4. Commits updated `data/` and `docs/` back to the repo
+3. Deduplicates authors
+4. Regenerates the dashboard
+5. Commits updated `data/` and `docs/` back to the repo
 
 ### Setup
 
