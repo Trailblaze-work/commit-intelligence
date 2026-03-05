@@ -156,7 +156,7 @@ def weekly_ai_stats(conn: sqlite3.Connection) -> list[sqlite3.Row]:
                COUNT(*) AS total,
                SUM(CASE WHEN ai_assisted = 1 THEN 1 ELSE 0 END) AS ai_count
         FROM commits
-        WHERE is_bot = 0 AND analyzed_at IS NOT NULL
+        WHERE is_bot = 0 AND is_merge = 0 AND analyzed_at IS NOT NULL
         GROUP BY week
         ORDER BY week
     """).fetchall()
@@ -168,7 +168,7 @@ def weekly_bugfix_feature_stats(conn: sqlite3.Connection) -> list[sqlite3.Row]:
                SUM(COALESCE(bug_count, 0)) AS bugs,
                SUM(COALESCE(feature_count, 0)) AS features
         FROM commits
-        WHERE is_bot = 0 AND analyzed_at IS NOT NULL
+        WHERE is_bot = 0 AND is_merge = 0 AND analyzed_at IS NOT NULL
         GROUP BY week
         ORDER BY week
     """).fetchall()
@@ -176,6 +176,7 @@ def weekly_bugfix_feature_stats(conn: sqlite3.Connection) -> list[sqlite3.Row]:
 
 _AUTHOR_EXPR = "COALESCE(a.canonical_name, c.author_login, c.author_name)"
 _AUTHOR_JOIN = "LEFT JOIN author_aliases a ON c.author_email = a.email"
+_WHERE_HUMAN = "c.is_bot = 0 AND c.is_merge = 0 AND c.analyzed_at IS NOT NULL"
 
 
 def author_stats(conn: sqlite3.Connection) -> list[sqlite3.Row]:
@@ -187,7 +188,7 @@ def author_stats(conn: sqlite3.Connection) -> list[sqlite3.Row]:
                SUM(COALESCE(c.feature_count, 0)) AS features
         FROM commits c
         {_AUTHOR_JOIN}
-        WHERE c.is_bot = 0 AND c.analyzed_at IS NOT NULL
+        WHERE {_WHERE_HUMAN}
         GROUP BY author
         ORDER BY total DESC
     """).fetchall()
@@ -202,6 +203,6 @@ def summary_stats(conn: sqlite3.Connection) -> dict:
                COUNT(DISTINCT {_AUTHOR_EXPR}) AS contributors
         FROM commits c
         {_AUTHOR_JOIN}
-        WHERE c.is_bot = 0 AND c.analyzed_at IS NOT NULL
+        WHERE {_WHERE_HUMAN}
     """).fetchone()
     return dict(row)
