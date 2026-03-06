@@ -62,8 +62,14 @@
   .header-meta { color: var(--text-muted); font-size: 0.85rem; font-weight: 300; }
   .filter-bar {
     margin-bottom: 1.5rem;
-    position: relative;
-    display: inline-block;
+    display: flex;
+    align-items: center;
+    gap: 1.5rem;
+    flex-wrap: wrap;
+  }
+  .filter-group {
+    display: flex;
+    align-items: center;
   }
   .filter-bar label {
     color: var(--text-muted);
@@ -160,10 +166,19 @@
 </div>
 
 <div class="filter-bar">
-  <label>Repository:</label>
-  <div class="combo" id="repoCombo">
-    <input type="text" class="combo-input" id="repoInput" placeholder="All repositories" autocomplete="off">
-    <div class="combo-list" id="repoList"></div>
+  <div class="filter-group">
+    <label>Repository:</label>
+    <div class="combo" id="repoCombo">
+      <input type="text" class="combo-input" id="repoInput" placeholder="All repositories" autocomplete="off">
+      <div class="combo-list" id="repoList"></div>
+    </div>
+  </div>
+  <div class="filter-group">
+    <label>Contributor:</label>
+    <div class="combo" id="contribCombo">
+      <input type="text" class="combo-input" id="contribInput" placeholder="All contributors" autocomplete="off">
+      <div class="combo-list" id="contribList"></div>
+    </div>
   </div>
 </div>
 
@@ -216,6 +231,7 @@
 // --- Embedded data ---
 const DATA = %%ALL_DATA_JSON%%;
 const REPOS = %%REPOS_JSON%%;
+const CONTRIBUTORS = %%CONTRIBUTORS_JSON%%;
 
 // --- Chart defaults ---
 Chart.defaults.color = '#9a9590';
@@ -273,13 +289,7 @@ let fixChart = new Chart(document.getElementById('fixChart'), {
   options: { responsive: true, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, ticks: { callback: v => v + '%' } } } },
 });
 
-// --- Searchable repo picker ---
-let selectedRepo = '__all__';
-let activeIdx = -1;
-
-const comboInput = document.getElementById('repoInput');
-const comboList = document.getElementById('repoList');
-
+// --- Searchable combo picker ---
 function highlightMatch(text, query) {
   if (!query) return text;
   const i = text.toLowerCase().indexOf(query.toLowerCase());
@@ -287,89 +297,104 @@ function highlightMatch(text, query) {
   return text.slice(0, i) + '<span class="match">' + text.slice(i, i + query.length) + '</span>' + text.slice(i + query.length);
 }
 
-function renderList(query) {
-  const q = (query || '').toLowerCase();
-  const items = [{ value: '__all__', label: 'All repositories' }]
-    .concat(REPOS.map(r => ({ value: r, label: r })))
-    .filter(it => !q || it.label.toLowerCase().includes(q));
-  activeIdx = -1;
-  comboList.innerHTML = items.map((it, i) =>
-    `<div class="combo-item" data-value="${it.value}" data-idx="${i}">${highlightMatch(it.label, query)}</div>`
-  ).join('');
-  comboList.classList.toggle('open', items.length > 0);
+function createCombo(comboId, inputId, listId, items, allLabel) {
+  let selected = '__all__';
+  let activeIdx = -1;
+  const input = document.getElementById(inputId);
+  const list = document.getElementById(listId);
+
+  function render(query) {
+    const q = (query || '').toLowerCase();
+    const all = [{ value: '__all__', label: allLabel }]
+      .concat(items.map(r => ({ value: r, label: r })))
+      .filter(it => !q || it.label.toLowerCase().includes(q));
+    activeIdx = -1;
+    list.innerHTML = all.map((it, i) =>
+      `<div class="combo-item" data-value="${it.value}" data-idx="${i}">${highlightMatch(it.label, query)}</div>`
+    ).join('');
+    list.classList.toggle('open', all.length > 0);
+  }
+
+  function select(value, label) {
+    selected = value;
+    input.value = value === '__all__' ? '' : label || value;
+    input.placeholder = value === '__all__' ? allLabel : '';
+    list.classList.remove('open');
+    applyFilter();
+  }
+
+  input.addEventListener('focus', () => render(input.value));
+  input.addEventListener('input', () => render(input.value));
+
+  input.addEventListener('keydown', (e) => {
+    const els = list.querySelectorAll('.combo-item');
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      activeIdx = Math.min(activeIdx + 1, els.length - 1);
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      activeIdx = Math.max(activeIdx - 1, 0);
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      if (activeIdx >= 0 && els[activeIdx]) {
+        select(els[activeIdx].dataset.value, els[activeIdx].textContent);
+      } else if (input.value === '') {
+        select('__all__', '');
+      }
+      input.blur();
+      return;
+    } else if (e.key === 'Escape') {
+      list.classList.remove('open');
+      input.blur();
+      return;
+    } else {
+      return;
+    }
+    els.forEach((el, i) => el.classList.toggle('active', i === activeIdx));
+    if (els[activeIdx]) els[activeIdx].scrollIntoView({ block: 'nearest' });
+  });
+
+  list.addEventListener('mousedown', (e) => {
+    const item = e.target.closest('.combo-item');
+    if (item) select(item.dataset.value, item.textContent);
+  });
+
+  document.addEventListener('click', (e) => {
+    if (!document.getElementById(comboId).contains(e.target)) {
+      list.classList.remove('open');
+    }
+  });
+
+  input.addEventListener('blur', () => {
+    setTimeout(() => {
+      if (!input.value && selected !== '__all__') {
+        select('__all__', '');
+      }
+    }, 200);
+  });
+
+  return { getSelected: () => selected };
 }
 
-function selectRepo(value, label) {
-  selectedRepo = value;
-  comboInput.value = value === '__all__' ? '' : label || value;
-  comboInput.placeholder = value === '__all__' ? 'All repositories' : '';
-  comboList.classList.remove('open');
-  applyFilter();
-}
-
-comboInput.addEventListener('focus', () => renderList(comboInput.value));
-comboInput.addEventListener('input', () => renderList(comboInput.value));
-
-comboInput.addEventListener('keydown', (e) => {
-  const items = comboList.querySelectorAll('.combo-item');
-  if (e.key === 'ArrowDown') {
-    e.preventDefault();
-    activeIdx = Math.min(activeIdx + 1, items.length - 1);
-  } else if (e.key === 'ArrowUp') {
-    e.preventDefault();
-    activeIdx = Math.max(activeIdx - 1, 0);
-  } else if (e.key === 'Enter') {
-    e.preventDefault();
-    if (activeIdx >= 0 && items[activeIdx]) {
-      selectRepo(items[activeIdx].dataset.value, items[activeIdx].textContent);
-    } else if (comboInput.value === '') {
-      selectRepo('__all__', '');
-    }
-    comboInput.blur();
-    return;
-  } else if (e.key === 'Escape') {
-    comboList.classList.remove('open');
-    comboInput.blur();
-    return;
-  } else {
-    return;
-  }
-  items.forEach((el, i) => el.classList.toggle('active', i === activeIdx));
-  if (items[activeIdx]) items[activeIdx].scrollIntoView({ block: 'nearest' });
-});
-
-comboList.addEventListener('mousedown', (e) => {
-  const item = e.target.closest('.combo-item');
-  if (item) selectRepo(item.dataset.value, item.textContent);
-});
-
-document.addEventListener('click', (e) => {
-  if (!document.getElementById('repoCombo').contains(e.target)) {
-    comboList.classList.remove('open');
-  }
-});
-
-comboInput.addEventListener('blur', () => {
-  setTimeout(() => {
-    if (!comboInput.value && selectedRepo !== '__all__') {
-      selectRepo('__all__', '');
-    }
-  }, 200);
-});
+const repoCombo = createCombo('repoCombo', 'repoInput', 'repoList', REPOS, 'All repositories');
+const contribCombo = createCombo('contribCombo', 'contribInput', 'contribList', CONTRIBUTORS, 'All contributors');
 
 function applyFilter() {
-  const repo = selectedRepo;
-  const isAll = repo === '__all__';
+  const repo = repoCombo.getSelected();
+  const contrib = contribCombo.getSelected();
+  const isAllRepo = repo === '__all__';
+  const isAllContrib = contrib === '__all__';
+  const match = d => (isAllRepo || d.repo === repo) && (isAllContrib || d.author === contrib);
 
   // Weekly totals (needed for tool % calculation)
-  const aiRows = DATA.weeklyAI.filter(d => isAll || d.repo === repo);
+  const aiRows = DATA.weeklyAI.filter(match);
   const totalByWeek = {};
   aiRows.forEach(d => {
     totalByWeek[d.week] = (totalByWeek[d.week] || 0) + d.total;
   });
 
   // AI tool breakdown as % of total commits
-  const toolRows = DATA.aiTools.filter(d => isAll || d.repo === repo);
+  const toolRows = DATA.aiTools.filter(match);
   const toolByWeek = {};
   const allTools = new Set();
   toolRows.forEach(d => {
@@ -401,7 +426,7 @@ function applyFilter() {
   toolChart.update();
 
   // Bug/feature ratio
-  const bfRows = DATA.weeklyBF.filter(d => isAll || d.repo === repo);
+  const bfRows = DATA.weeklyBF.filter(match);
   const bfByWeek = {};
   bfRows.forEach(d => {
     if (!bfByWeek[d.week]) bfByWeek[d.week] = { bugs: 0, features: 0 };
@@ -417,7 +442,7 @@ function applyFilter() {
   bfChart.update();
 
   // Author data
-  const authRows = DATA.authors.filter(d => isAll || d.repo === repo);
+  const authRows = DATA.authors.filter(match);
   const authByName = {};
   authRows.forEach(d => {
     if (!authByName[d.author]) authByName[d.author] = { total: 0, ai: 0, bugs: 0, features: 0 };
@@ -429,7 +454,7 @@ function applyFilter() {
   const authSorted = Object.entries(authByName).sort((a, b) => b[1].total - a[1].total);
 
   // Summary cards
-  const sumRows = DATA.repoSummary.filter(d => isAll || d.repo === repo);
+  const sumRows = DATA.repoSummary.filter(match);
   let total = 0, aiCount = 0, bugs = 0, features = 0;
   const contribs = new Set();
   sumRows.forEach(d => {
@@ -470,7 +495,7 @@ function applyFilter() {
   document.getElementById('cardContrib').textContent = contribs.size;
 
   // Commit size chart
-  const sizeRows = DATA.commitSize.filter(d => isAll || d.repo === repo);
+  const sizeRows = DATA.commitSize.filter(match);
   const sizeByWeek = {};
   sizeRows.forEach(d => {
     if (!sizeByWeek[d.week]) sizeByWeek[d.week] = { totalSize: 0, count: 0 };
@@ -483,7 +508,7 @@ function applyFilter() {
   sizeChart.update();
 
   // Commit frequency (avg commits per active author per week)
-  const freqRows = DATA.authorFreq.filter(d => isAll || d.repo === repo);
+  const freqRows = DATA.authorFreq.filter(match);
   const freqByWeek = {};
   freqRows.forEach(d => {
     if (!freqByWeek[d.week]) freqByWeek[d.week] = { totalCommits: 0, authors: new Set() };
@@ -499,7 +524,7 @@ function applyFilter() {
   freqChart.update();
 
   // Fix-after-commit rate
-  const fixRows = DATA.fixRate.filter(d => isAll || d.repo === repo);
+  const fixRows = DATA.fixRate.filter(match);
   const fixByWeek = {};
   fixRows.forEach(d => {
     if (!fixByWeek[d.week]) fixByWeek[d.week] = { total: 0, fixed: 0 };

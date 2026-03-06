@@ -39,6 +39,7 @@ def init_db(conn: sqlite3.Connection) -> None:
             message TEXT,
             is_merge INTEGER DEFAULT 0,
             is_bot INTEGER DEFAULT 0,
+            is_first_parent INTEGER DEFAULT 0,
             ai_assisted INTEGER,
             ai_tool TEXT,
             ai_confidence REAL,
@@ -53,6 +54,7 @@ def init_db(conn: sqlite3.Connection) -> None:
 
         CREATE INDEX IF NOT EXISTS idx_commits_date ON commits(committed_at);
         CREATE INDEX IF NOT EXISTS idx_commits_analyzed ON commits(analyzed_at);
+        CREATE INDEX IF NOT EXISTS idx_commits_first_parent ON commits(is_first_parent);
 
         -- Maps (author_email) to a canonical display name.
         -- Populated automatically from scan data; edit rows to merge identities.
@@ -152,14 +154,15 @@ def ensure_alias(conn: sqlite3.Connection, email: str | None,
 def insert_commit(conn: sqlite3.Connection, repo_id: int, sha: str,
                   author_name: str | None, author_email: str | None,
                   author_login: str | None, committed_at: str,
-                  message: str | None, is_merge: bool, is_bot: bool) -> None:
+                  message: str | None, is_merge: bool, is_bot: bool,
+                  is_first_parent: bool = False) -> None:
     conn.execute(
         "INSERT OR IGNORE INTO commits "
         "(repo_id, sha, author_name, author_email, author_login, committed_at, "
-        "message, is_merge, is_bot) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "message, is_merge, is_bot, is_first_parent) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (repo_id, sha, author_name, author_email, author_login, committed_at,
-         message, int(is_merge), int(is_bot)),
+         message, int(is_merge), int(is_bot), int(is_first_parent)),
     )
 
 
@@ -264,47 +267,64 @@ def repo_list(conn: sqlite3.Connection) -> list[str]:
     return [r["name"] for r in rows]
 
 
+def contributor_list(conn: sqlite3.Connection) -> list[str]:
+    rows = conn.execute(f"""
+        SELECT DISTINCT {_AUTHOR_EXPR} AS author
+        FROM commits c
+        {_AUTHOR_JOIN}
+        WHERE {_WHERE_HUMAN}
+        ORDER BY author
+    """).fetchall()
+    return [r["author"] for r in rows]
+
+
 def per_repo_weekly_ai_stats(conn: sqlite3.Connection) -> list[sqlite3.Row]:
-    return conn.execute("""
+    return conn.execute(f"""
         SELECT r.name AS repo,
+               {_AUTHOR_EXPR} AS author,
                date(c.committed_at, 'weekday 0', '-6 days') AS week,
                COUNT(*) AS total,
                SUM(CASE WHEN c.ai_assisted = 1 THEN 1 ELSE 0 END) AS ai_count
         FROM commits c
         JOIN repos r ON c.repo_id = r.id
-        WHERE c.is_bot = 0 AND c.is_merge = 0 AND c.analyzed_at IS NOT NULL AND c.committed_at >= '2026-01-01'
-        GROUP BY repo, week
-        ORDER BY repo, week
+        {_AUTHOR_JOIN}
+        WHERE {_WHERE_HUMAN}
+        GROUP BY repo, author, week
+        ORDER BY repo, author, week
     """).fetchall()
 
 
 def per_repo_weekly_ai_tool_stats(conn: sqlite3.Connection) -> list[sqlite3.Row]:
-    return conn.execute("""
+    return conn.execute(f"""
         SELECT r.name AS repo,
+               {_AUTHOR_EXPR} AS author,
                date(c.committed_at, 'weekday 0', '-6 days') AS week,
                c.ai_tool AS tool,
                COUNT(*) AS count
         FROM commits c
         JOIN repos r ON c.repo_id = r.id
-        WHERE c.is_bot = 0 AND c.is_merge = 0 AND c.analyzed_at IS NOT NULL
-              AND c.committed_at >= '2026-01-01' AND c.ai_assisted = 1
+        {_AUTHOR_JOIN}
+        WHERE {_WHERE_HUMAN}
+              AND c.ai_assisted = 1
               AND c.ai_tool IS NOT NULL AND c.ai_tool != 'none'
-        GROUP BY repo, week, tool
-        ORDER BY repo, week, tool
+        GROUP BY repo, author, week, tool
+        ORDER BY repo, author, week, tool
     """).fetchall()
 
 
 def per_repo_weekly_bf_stats(conn: sqlite3.Connection) -> list[sqlite3.Row]:
-    return conn.execute("""
+    return conn.execute(f"""
         SELECT r.name AS repo,
+               {_AUTHOR_EXPR} AS author,
                date(c.committed_at, 'weekday 0', '-6 days') AS week,
                SUM(COALESCE(c.bug_count, 0)) AS bugs,
                SUM(COALESCE(c.feature_count, 0)) AS features
         FROM commits c
         JOIN repos r ON c.repo_id = r.id
-        WHERE c.is_bot = 0 AND c.is_merge = 0 AND c.analyzed_at IS NOT NULL AND c.committed_at >= '2026-01-01'
-        GROUP BY repo, week
-        ORDER BY repo, week
+        {_AUTHOR_JOIN}
+        WHERE {_WHERE_HUMAN}
+        GROUP BY repo, author, week
+        ORDER BY repo, author, week
     """).fetchall()
 
 
@@ -328,23 +348,24 @@ def per_repo_author_stats(conn: sqlite3.Connection) -> list[sqlite3.Row]:
 def per_repo_summary(conn: sqlite3.Connection) -> list[sqlite3.Row]:
     return conn.execute(f"""
         SELECT r.name AS repo,
+               {_AUTHOR_EXPR} AS author,
                COUNT(*) AS total,
                SUM(CASE WHEN c.ai_assisted = 1 THEN 1 ELSE 0 END) AS ai_count,
                SUM(COALESCE(c.bug_count, 0)) AS bugs,
-               SUM(COALESCE(c.feature_count, 0)) AS features,
-               COUNT(DISTINCT {_AUTHOR_EXPR}) AS contributors
+               SUM(COALESCE(c.feature_count, 0)) AS features
         FROM commits c
         JOIN repos r ON c.repo_id = r.id
         {_AUTHOR_JOIN}
         WHERE {_WHERE_HUMAN}
-        GROUP BY repo
+        GROUP BY repo, author
         ORDER BY total DESC
     """).fetchall()
 
 
 def per_repo_weekly_commit_size(conn: sqlite3.Connection) -> list[sqlite3.Row]:
-    return conn.execute("""
+    return conn.execute(f"""
         SELECT r.name AS repo,
+               {_AUTHOR_EXPR} AS author,
                date(c.committed_at, 'weekday 0', '-6 days') AS week,
                AVG(COALESCE(c.lines_added, 0) + COALESCE(c.lines_removed, 0)) AS avg_size,
                SUM(COALESCE(c.lines_added, 0)) AS total_added,
@@ -352,10 +373,11 @@ def per_repo_weekly_commit_size(conn: sqlite3.Connection) -> list[sqlite3.Row]:
                COUNT(*) AS commit_count
         FROM commits c
         JOIN repos r ON c.repo_id = r.id
-        WHERE c.is_bot = 0 AND c.is_merge = 0 AND c.analyzed_at IS NOT NULL AND c.committed_at >= '2026-01-01'
+        {_AUTHOR_JOIN}
+        WHERE {_WHERE_HUMAN}
               AND c.lines_added IS NOT NULL
-        GROUP BY repo, week
-        ORDER BY repo, week
+        GROUP BY repo, author, week
+        ORDER BY repo, author, week
     """).fetchall()
 
 
@@ -378,10 +400,11 @@ def per_repo_author_frequency(conn: sqlite3.Connection) -> list[sqlite3.Row]:
 FIX_AFTER_COMMIT_WINDOW_HOURS = 48
 
 def fix_after_commit_stats(conn: sqlite3.Connection) -> list[sqlite3.Row]:
-    """For each repo+week, count commits that were followed by a fix commit
+    """For each repo+author+week, count commits that were followed by a fix commit
     (classified as bug_count > 0) touching the same files within 48 hours."""
     return conn.execute(f"""
         SELECT r.name AS repo,
+               COALESCE(a.canonical_name, c1.author_login, c1.author_name) AS author,
                date(c1.committed_at, 'weekday 0', '-6 days') AS week,
                COUNT(DISTINCT c1.sha) AS total_commits,
                COUNT(DISTINCT CASE
@@ -392,7 +415,7 @@ def fix_after_commit_stats(conn: sqlite3.Connection) -> list[sqlite3.Row]:
                          AND (julianday(c2.committed_at) - julianday(c1.committed_at)) * 24
                              <= {FIX_AFTER_COMMIT_WINDOW_HOURS}
                          AND c2.bug_count > 0
-                         AND c2.is_bot = 0 AND c2.is_merge = 0
+                         AND c2.is_bot = 0 AND c2.is_first_parent = 1
                          AND c2.files_changed IS NOT NULL
                          AND EXISTS (
                              SELECT value FROM json_each(c2.files_changed)
@@ -402,10 +425,11 @@ def fix_after_commit_stats(conn: sqlite3.Connection) -> list[sqlite3.Row]:
                ) AS followed_by_fix
         FROM commits c1
         JOIN repos r ON c1.repo_id = r.id
-        WHERE c1.is_bot = 0 AND c1.is_merge = 0 AND c1.analyzed_at IS NOT NULL
+        LEFT JOIN author_aliases a ON c1.author_email = a.email
+        WHERE c1.is_bot = 0 AND c1.is_first_parent = 1 AND c1.analyzed_at IS NOT NULL
               AND c1.committed_at >= '2026-01-01'
-        GROUP BY repo, week
-        ORDER BY repo, week
+        GROUP BY repo, author, week
+        ORDER BY repo, author, week
     """).fetchall()
 
 

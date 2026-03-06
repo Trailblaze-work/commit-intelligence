@@ -85,6 +85,7 @@ def scan(org_name: str, token: str | None = None, months: int = 6) -> None:
                 db.insert_commit(
                     conn, repo_id, sha, author_name, author_email, author_login,
                     committed_at, message, merge, bot,
+                    is_first_parent=True,
                 )
                 count += 1
         except GithubException as e:
@@ -149,6 +150,17 @@ def scan_local(repos_dir: str, org_name: str = "local",
 
         print(f"  Scanning {name} (since {since.date()})...", end=" ", flush=True)
 
+        # Collect first-parent SHAs on the default branch
+        first_parent_shas: set[str] = set()
+        if default_branch:
+            fp_result = subprocess.run(
+                ["git", "log", "--first-parent", "--format=%H",
+                 f"--since={since_str}", default_branch],
+                cwd=repo_dir, capture_output=True, text=True, timeout=30,
+            )
+            if fp_result.returncode == 0:
+                first_parent_shas = set(fp_result.stdout.split())
+
         cmd = [
             "git", "log", "--all",
             f"--since={since_str}",
@@ -186,6 +198,7 @@ def scan_local(repos_dir: str, org_name: str = "local",
             db.insert_commit(
                 conn, repo_id, sha, author_name, author_email, None,
                 committed_at, message.strip(), merge, bot,
+                is_first_parent=sha in first_parent_shas,
             )
             count += 1
 
@@ -266,3 +279,50 @@ def backfill_sizes(repos_dir: str) -> None:
 
     conn.close()
     print(f"Size backfill complete: {total} commits updated.")
+
+
+def backfill_first_parent(repos_dir: str) -> None:
+    """Mark commits that appear on the first-parent chain of the default branch."""
+    repos_path = Path(repos_dir).resolve()
+    conn = db.get_connection()
+    db.init_db(conn)
+
+    repos = conn.execute(
+        "SELECT id, name, default_branch FROM repos"
+    ).fetchall()
+
+    total = 0
+    for repo in repos:
+        repo_dir = repos_path / repo["name"]
+        if not (repo_dir / ".git").exists():
+            continue
+        branch = repo["default_branch"]
+        if not branch:
+            continue
+
+        result = subprocess.run(
+            ["git", "log", "--first-parent", "--format=%H", branch],
+            cwd=repo_dir, capture_output=True, text=True, timeout=60,
+        )
+        if result.returncode != 0:
+            continue
+
+        shas = result.stdout.split()
+        if not shas:
+            continue
+
+        # Batch update in chunks
+        for i in range(0, len(shas), 500):
+            chunk = shas[i:i + 500]
+            placeholders = ",".join("?" * len(chunk))
+            conn.execute(
+                f"UPDATE commits SET is_first_parent = 1 "
+                f"WHERE sha IN ({placeholders}) AND repo_id = ?",
+                chunk + [repo["id"]],
+            )
+        conn.commit()
+        total += len(shas)
+        print(f"  {repo['name']}: marked {len(shas)} first-parent commits")
+
+    conn.close()
+    print(f"First-parent backfill complete: {total} commits marked.")

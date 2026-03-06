@@ -31,6 +31,10 @@ def main() -> None:
     p_sizes = sub.add_parser("backfill-sizes", help="Extract commit sizes from local repos")
     p_sizes.add_argument("--path", required=True, help="Directory containing git repos")
 
+    # backfill-first-parent
+    p_fp = sub.add_parser("backfill-first-parent", help="Mark first-parent commits from local repos")
+    p_fp.add_argument("--path", required=True, help="Directory containing git repos")
+
     # deduplicate-authors
     sub.add_parser("deduplicate-authors", help="Heuristic author deduplication")
 
@@ -73,6 +77,10 @@ def main() -> None:
         from .scanner import backfill_sizes
         backfill_sizes(args.path)
 
+    elif args.command == "backfill-first-parent":
+        from .scanner import backfill_first_parent
+        backfill_first_parent(args.path)
+
     elif args.command == "analyze":
         from .analyzer import analyze
         analyze()
@@ -92,11 +100,12 @@ def main() -> None:
         generate(output_dir=args.output)
 
     elif args.command == "run-local":
-        from .scanner import scan_local, backfill_sizes
+        from .scanner import scan_local, backfill_sizes, backfill_first_parent
         from .analyzer import analyze, deduplicate_authors
         from .dashboard import generate
 
         scan_local(args.path, org_name=args.org, since_date=args.since)
+        backfill_first_parent(args.path)
         analyze()
         deduplicate_authors()
         backfill_sizes(args.path)

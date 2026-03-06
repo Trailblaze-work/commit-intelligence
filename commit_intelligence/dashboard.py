@@ -13,6 +13,7 @@ def generate(output_dir: str = "docs/") -> None:
     db.init_db(conn)
 
     repos = db.repo_list(conn)
+    contributors = db.contributor_list(conn)
     weekly_ai = db.per_repo_weekly_ai_stats(conn)
     weekly_bf = db.per_repo_weekly_bf_stats(conn)
     authors = db.per_repo_author_stats(conn)
@@ -25,14 +26,14 @@ def generate(output_dir: str = "docs/") -> None:
     conn.close()
 
     all_data = {
-        "weeklyAI": [{"repo": r["repo"], "week": r["week"], "total": r["total"], "ai_count": r["ai_count"]} for r in weekly_ai],
-        "aiTools": [{"repo": r["repo"], "week": r["week"], "tool": r["tool"], "count": r["count"]} for r in ai_tools],
-        "weeklyBF": [{"repo": r["repo"], "week": r["week"], "bugs": r["bugs"], "features": r["features"]} for r in weekly_bf],
+        "weeklyAI": [{"repo": r["repo"], "author": r["author"], "week": r["week"], "total": r["total"], "ai_count": r["ai_count"]} for r in weekly_ai],
+        "aiTools": [{"repo": r["repo"], "author": r["author"], "week": r["week"], "tool": r["tool"], "count": r["count"]} for r in ai_tools],
+        "weeklyBF": [{"repo": r["repo"], "author": r["author"], "week": r["week"], "bugs": r["bugs"], "features": r["features"]} for r in weekly_bf],
         "authors": [{"repo": r["repo"], "author": r["author"], "total": r["total"], "ai_count": r["ai_count"], "bugs": r["bugs"], "features": r["features"]} for r in authors],
-        "repoSummary": [{"repo": r["repo"], "total": r["total"], "ai_count": r["ai_count"], "bugs": r["bugs"], "features": r["features"], "contributors": r["contributors"]} for r in repo_summary],
-        "commitSize": [{"repo": r["repo"], "week": r["week"], "avg_size": r["avg_size"], "commit_count": r["commit_count"]} for r in commit_size],
+        "repoSummary": [{"repo": r["repo"], "author": r["author"], "total": r["total"], "ai_count": r["ai_count"], "bugs": r["bugs"], "features": r["features"]} for r in repo_summary],
+        "commitSize": [{"repo": r["repo"], "author": r["author"], "week": r["week"], "avg_size": r["avg_size"], "commit_count": r["commit_count"]} for r in commit_size],
         "authorFreq": [{"repo": r["repo"], "author": r["author"], "week": r["week"], "commits": r["commits"]} for r in author_freq],
-        "fixRate": [{"repo": r["repo"], "week": r["week"], "total_commits": r["total_commits"], "followed_by_fix": r["followed_by_fix"]} for r in fix_rate],
+        "fixRate": [{"repo": r["repo"], "author": r["author"], "week": r["week"], "total_commits": r["total_commits"], "followed_by_fix": r["followed_by_fix"]} for r in fix_rate],
         "dateRange": {"earliest": dates["earliest"][:10] if dates["earliest"] else "", "latest": dates["latest"][:10] if dates["latest"] else ""},
     }
 
@@ -45,6 +46,7 @@ def generate(output_dir: str = "docs/") -> None:
         "%%LAST_UPDATED%%": last_updated,
         "%%EXPIRES%%": expires,
         "%%REPOS_JSON%%": json.dumps(repos),
+        "%%CONTRIBUTORS_JSON%%": json.dumps(contributors),
         "%%ALL_DATA_JSON%%": json.dumps(all_data),
     }
     for key, value in replacements.items():
