@@ -1,0 +1,22 @@
+{
+  "session_id": "85143e63-f4d9-49f1-857c-495ad27f2406",
+  "slug": "playful-prancing-kay",
+  "started": "2026-03-06T11:07:19.618Z",
+  "last_updated": "2026-03-06T11:17:23.127Z",
+  "models": [
+    "claude-opus-4-6"
+  ],
+  "client_version": "2.1.70",
+  "git_branch": "main",
+  "user_turns": 18,
+  "assistant_turns": 29,
+  "commits": [],
+  "tools_used": {
+    "ToolSearch": 2,
+    "Grep": 1,
+    "Glob": 1,
+    "Read": 6,
+    "Edit": 7
+  },
+  "compressed_size": 53801
+}
